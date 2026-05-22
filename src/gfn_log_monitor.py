@@ -11,7 +11,6 @@ class GFNLogMonitor:
         self.current_game = "GeForce NOW Dashboard"
         self.is_playing = False
         
-        # Load KarmaDevz's configuration mapping
         self.game_mappings = {}
         if os.path.exists(config_path):
             try:
@@ -22,32 +21,64 @@ class GFNLogMonitor:
                 print(f"Error loading JSON configuration file: {e}")
  
     def sanitize_string(self, text):
-        """Strips out special characters like ®, ™, and strange trailing spaces.
-        
-        Ensures a log string like 'Cyberpunk 2077®' cleanly matches a JSON key like 'Cyberpunk 2077'.
-        """
         if not text:
             return ""
-        
         clean = text.replace("®", "").replace("™", "")
         clean = re.sub(r'\s+', ' ', clean).strip()
         return clean
 
-    def init_stream(self):
-        """Locks onto the bottom of the log file on startup."""
+    def init_stream(self, seek_to_end=True):
+        """Locks onto the log file."""
+        if self.file_handle:
+            try: self.file_handle.close()
+            except: pass
+        
         if os.path.exists(self.log_path):
-            self.file_handle = open(self.log_path, 'r', encoding='utf-8', errors='ignore')
-            self.file_handle.seek(0, os.SEEK_END)
-            return True
+            try:
+                self.file_handle = open(self.log_path, 'r', encoding='utf-8', errors='ignore')
+                if seek_to_end:
+                    self.file_handle.seek(0, os.SEEK_END)
+                return True
+            except Exception as e:
+                print(f"[Log Monitor Error]: {e}")
+                self.file_handle = None
         return False
 
-    def scan_new_lines(self):
-        """Scans newly appended lines in real-time, sanitizing names on the fly."""
-        if not self.file_handle:
-            self.init_stream()
-            return self.current_game, self.is_playing
+    def check_file_rotated(self):
+        """Standard OS check to see if NVIDIA deleted and recreated the log file."""
+        try:
+            path_inode = os.stat(self.log_path).st_ino
+            fd_inode = os.fstat(self.file_handle.fileno()).st_ino
+            return path_inode != fd_inode
+        except Exception:
+            return True # File was deleted by NVIDIA
 
-        lines = self.file_handle.readlines()
+    def reset(self):
+        print("[Log Monitor]: Resetting states...")
+        self.current_game = "GeForce NOW Dashboard"
+        self.is_playing = False
+
+    def close(self):
+        if self.file_handle:
+            try: self.file_handle.close()
+            except: pass
+            self.file_handle = None
+
+    def scan_new_lines(self):
+        if not self.file_handle:
+            if not self.init_stream(seek_to_end=True):
+                return self.current_game, self.is_playing
+        elif self.check_file_rotated():
+            print("[Log Monitor]: NVIDIA restarted. Re-hooking fresh stream...")
+            self.init_stream(seek_to_end=False)
+
+        try:
+            lines = self.file_handle.readlines()
+        except Exception as e:
+            print(f"[Log Monitor]: Stream read error ({e}).")
+            self.close()
+            return self.current_game, self.is_playing
+        
         if lines:
             for line in lines:
                 if "ApplicationClass" in line and "Launch game" in line:
@@ -65,4 +96,3 @@ class GFNLogMonitor:
                         self.is_playing = False
 
         return self.current_game, self.is_playing
-

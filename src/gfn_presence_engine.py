@@ -24,12 +24,9 @@ class GFNPresenceEngine:
         current_game, is_playing = self.monitor.scan_new_lines()
         
         try:
-            # 1. Check if the launcher window or the actual game streaming engine are running
-            # We look for 'GeForceNOW' (launcher) OR 'GeForceNOWStreamer' (active game stream)
             check_launcher = subprocess.run(['pgrep', '-x', 'GeForceNOW'], capture_output=True, text=True)
             check_streamer = subprocess.run(['pgrep', '-x', 'GeForceNOWStreamer'], capture_output=True, text=True)
             
-            # 2. Only disconnect if BOTH processes have completely exited memory
             if not check_launcher.stdout.strip() and not check_streamer.stdout.strip():
                 if self.active_status is not None:
                     print("[Engine Update]: GeForce NOW processes completely closed. Disconnecting.")
@@ -93,7 +90,11 @@ class GFNPresenceEngine:
                 self.rpc = None
                 
         self.active_status = None
+        
         try:
-            self.monitor.close()
-        except Exception:
+            self.monitor.reset()
+        except Exception as e:
+            print(f"Error resetting log monitor: {e}")
             pass
+
+        
